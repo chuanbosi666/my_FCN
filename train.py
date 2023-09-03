@@ -13,7 +13,7 @@ import transforms as T
 class SegmentationPresetTrain:
     def __init__(self, base_size, crop_size, hflip_prob=0.5, mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)):
         min_size = int(0.5 * base_size)
-        max_size = int(2.0 * base_size)
+        max_size = int(2.0 * base_size) #设定最大尺寸
 
         trans = [T.RandomResize(min_size, max_size)]
         if hflip_prob > 0:
@@ -22,11 +22,11 @@ class SegmentationPresetTrain:
             T.RandomCrop(crop_size),
             T.ToTensor(),
             T.Normalize(mean=mean, std=std),
-        ])
+        ])# 对图像进行变换进行设定
         self.transforms = T.Compose(trans)
 
     def __call__(self, img, target):
-        return self.transforms(img, target)
+        return self.transforms(img, target)  #这个函数的作用是调用这个类之后会自动调用这个函数
 
 
 class SegmentationPresetEval:
@@ -38,33 +38,34 @@ class SegmentationPresetEval:
         ])
 
     def __call__(self, img, target):
-        return self.transforms(img, target)
+        return self.transforms(img, target) #这个类和上面的类似，只不过对图片的变换比较少
 
 
 def get_transform(train):
     base_size = 520
-    crop_size = 480
+    crop_size = 480  #对一些尺寸进行了设定
 
-    return SegmentationPresetTrain(base_size, crop_size) if train else SegmentationPresetEval(base_size)
+    return SegmentationPresetTrain(base_size, crop_size) if train else SegmentationPresetEval(base_size)  #根据传进来的参数来运行
 
 
 def create_model(aux, num_classes, pretrain=True):
-    model = fcn_resnet50(aux=aux, num_classes=num_classes)
+    model = fcn_resnet50(aux=aux, num_classes=num_classes)  # 将是否使用辅助分类器和类别数传进去我们的backbone中
 
     if pretrain:
-        weights_dict = torch.load("./fcn_resnet50_coco.pth", map_location='cpu')
+        weights_dict = torch.load("./fcn_resnet50_coco.pth", map_location='cpu')  #看使用预训练权重，传入路径
 
         if num_classes != 21:
             # 官方提供的预训练权重是21类(包括背景)
             # 如果训练自己的数据集，将和类别相关的权重删除，防止权重shape不一致报错
             for k in list(weights_dict.keys()):
                 if "classifier.4" in k:
-                    del weights_dict[k]
+                    del weights_dict[k]  # 当我们使用voc数据集时，类别数为21，可以使用预训练权重，
+                    #当使用我们自己的数据集的时候，就要将我们分类器的第四层的权重删去，也就是最后一个卷积的通道数删去，保证我们的训练正常进行
 
         missing_keys, unexpected_keys = model.load_state_dict(weights_dict, strict=False)
         if len(missing_keys) != 0 or len(unexpected_keys) != 0:
             print("missing_keys: ", missing_keys)
-            print("unexpected_keys: ", unexpected_keys)
+            print("unexpected_keys: ", unexpected_keys)  #第一个打印的是我们在删去classifier.4的权重，第二个是我们没使用的权重
 
     return model
 
@@ -73,7 +74,7 @@ def main(args):
     device = torch.device(args.device if torch.cuda.is_available() else "cpu")
     batch_size = args.batch_size
     # segmentation nun_classes + background
-    num_classes = args.num_classes + 1
+    num_classes = args.num_classes + 1 #对参数的设定
 
     # 用来保存训练以及验证过程中信息
     results_file = "results{}.txt".format(datetime.datetime.now().strftime("%Y%m%d-%H%M%S"))
@@ -82,44 +83,44 @@ def main(args):
     train_dataset = VOCSegmentation(args.data_path,
                                     year="2012",
                                     transforms=get_transform(train=True),
-                                    txt_name="train.txt")
+                                    txt_name="train.txt") #对传入数据的路径，参数'year'的传入，对图像转换的设定为训练模式，以及图片索引的文件
 
     # VOCdevkit -> VOC2012 -> ImageSets -> Segmentation -> val.txt
     val_dataset = VOCSegmentation(args.data_path,
                                   year="2012",
                                   transforms=get_transform(train=False),
-                                  txt_name="val.txt")
+                                  txt_name="val.txt")  # 同上
 
-    num_workers = min([os.cpu_count(), batch_size if batch_size > 1 else 0, 8])
+    num_workers = min([os.cpu_count(), batch_size if batch_size > 1 else 0, 8])  # 对这几个取最小值作为同时运行的最小数值
     train_loader = torch.utils.data.DataLoader(train_dataset,
                                                batch_size=batch_size,
                                                num_workers=num_workers,
                                                shuffle=True,
                                                pin_memory=True,
-                                               collate_fn=train_dataset.collate_fn)
+                                               collate_fn=train_dataset.collate_fn)  # 对于训练的data_loader进行参数传入，调用自带的函数，传进去数据集，以及其他参数，最后一个是冻结共享BN层
 
     val_loader = torch.utils.data.DataLoader(val_dataset,
                                              batch_size=1,
                                              num_workers=num_workers,
                                              pin_memory=True,
-                                             collate_fn=val_dataset.collate_fn)
+                                             collate_fn=val_dataset.collate_fn)  # 同上
 
-    model = create_model(aux=args.aux, num_classes=num_classes)
-    model.to(device)
+    model = create_model(aux=args.aux, num_classes=num_classes)  # 传入参数
+    model.to(device) #放进设备中
 
     params_to_optimize = [
         {"params": [p for p in model.backbone.parameters() if p.requires_grad]},
         {"params": [p for p in model.classifier.parameters() if p.requires_grad]}
-    ]
+    ] # 对于优化器的参数进行解读，p是代表什么，前提是参数需要梯度为true
 
-    if args.aux:
+    if args.aux:  #下面的都是将参数传进相关的位置
         params = [p for p in model.aux_classifier.parameters() if p.requires_grad]
         params_to_optimize.append({"params": params, "lr": args.lr * 10})
 
     optimizer = torch.optim.SGD(
         params_to_optimize,
         lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay
-    )
+    ) #
 
     scaler = torch.cuda.amp.GradScaler() if args.amp else None
 

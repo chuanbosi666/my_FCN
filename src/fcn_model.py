@@ -34,30 +34,30 @@ class IntermediateLayerGetter(nn.ModuleDict):
     }
 
     def __init__(self, model: nn.Module, return_layers: Dict[str, str]) -> None:
-        if not set(return_layers).issubset([name for name, _ in model.named_children()]):
+        if not set(return_layers).issubset([name for name, _ in model.named_children()]):  # 判断return_layers是否有权重，并且是否在model的模块中
             raise ValueError("return_layers are not present in model")
         orig_return_layers = return_layers
-        return_layers = {str(k): str(v) for k, v in return_layers.items()}
+        return_layers = {str(k): str(v) for k, v in return_layers.items()}  # 强制性的将返回层的key和value转换成字符型
 
         # 重新构建backbone，将没有使用到的模块全部删掉
-        layers = OrderedDict()
-        for name, module in model.named_children():
+        layers = OrderedDict()  # 创建一个字典
+        for name, module in model.named_children(): # 这里的return——layer会根据使用的骨干网络的不同而不同，例如resnet50的为layer4为输出，以字典的形式保存
             layers[name] = module
             if name in return_layers:
                 del return_layers[name]
             if not return_layers:
                 break
 
-        super(IntermediateLayerGetter, self).__init__(layers)
+        super(IntermediateLayerGetter, self).__init__(layers)  #将构建好的backbone放入父类中去
         self.return_layers = orig_return_layers
 
     def forward(self, x: Tensor) -> Dict[str, Tensor]:
-        out = OrderedDict()
+        out = OrderedDict()  #这是模型的正向传播
         for name, module in self.items():
-            x = module(x)
-            if name in self.return_layers:
-                out_name = self.return_layers[name]
-                out[out_name] = x
+            x = module(x)  #将图像放进模型中去
+            if name in self.return_layers:  #这个判断的作用是来使用out还是辅助分类器的out
+                out_name = self.return_layers[name]  #当为layer3时，会使用辅助分类器，为layer4时会使用正常的分类器
+                out[out_name] = x  # 把我们得到的预测放入分类器中去
         return out
 
 
@@ -83,18 +83,18 @@ class FCN(nn.Module):
         self.aux_classifier = aux_classifier
 
     def forward(self, x: Tensor) -> Dict[str, Tensor]:
-        input_shape = x.shape[-2:]
+        input_shape = x.shape[-2:]  
         # contract: features is a dict of tensors
-        features = self.backbone(x)
+        features = self.backbone(x) #经过backbone会得到特征图
 
         result = OrderedDict()
         x = features["out"]
         x = self.classifier(x)
         # 原论文中虽然使用的是ConvTranspose2d，但权重是冻结的，所以就是一个bilinear插值
         x = F.interpolate(x, size=input_shape, mode='bilinear', align_corners=False)
-        result["out"] = x
+        result["out"] = x  #一个简单的分类器使用
 
-        if self.aux_classifier is not None:
+        if self.aux_classifier is not None:  # 对辅助分类器的使用
             x = features["aux"]
             x = self.aux_classifier(x)
             # 原论文中虽然使用的是ConvTranspose2d，但权重是冻结的，所以就是一个bilinear插值
@@ -104,7 +104,7 @@ class FCN(nn.Module):
         return result
 
 
-class FCNHead(nn.Sequential):
+class FCNHead(nn.Sequential):  # 一个分类头
     def __init__(self, in_channels, channels):
         inter_channels = in_channels // 4
         layers = [
@@ -133,7 +133,7 @@ def fcn_resnet50(aux, num_classes=21, pretrain_backbone=False):
     return_layers = {'layer4': 'out'}
     if aux:
         return_layers['layer3'] = 'aux'
-    backbone = IntermediateLayerGetter(backbone, return_layers=return_layers)
+    backbone = IntermediateLayerGetter(backbone, return_layers=return_layers)  #对于骨干网络，
 
     aux_classifier = None
     # why using aux: https://github.com/pytorch/vision/issues/4292
@@ -150,16 +150,16 @@ def fcn_resnet50(aux, num_classes=21, pretrain_backbone=False):
 def fcn_resnet101(aux, num_classes=21, pretrain_backbone=False):
     # 'resnet101_imagenet': 'https://download.pytorch.org/models/resnet101-63fe2227.pth'
     # 'fcn_resnet101_coco': 'https://download.pytorch.org/models/fcn_resnet101_coco-7ecb50ca.pth'
-    backbone = resnet101(replace_stride_with_dilation=[False, True, True])
+    backbone = resnet101(replace_stride_with_dilation=[False, True, True])  # 设定骨干网络
 
     if pretrain_backbone:
         # 载入resnet101 backbone预训练权重
         backbone.load_state_dict(torch.load("resnet101.pth", map_location='cpu'))
 
     out_inplanes = 2048
-    aux_inplanes = 1024
+    aux_inplanes = 1024  # 这里分别设定输出和辅助分类器的输出大小
 
-    return_layers = {'layer4': 'out'}
+    return_layers = {'layer4': 'out'}  # 对返回层进行了设定
     if aux:
         return_layers['layer3'] = 'aux'
     backbone = IntermediateLayerGetter(backbone, return_layers=return_layers)

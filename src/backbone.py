@@ -2,28 +2,28 @@ import torch
 import torch.nn as nn
 
 
-def conv3x3(in_planes, out_planes, stride=1, groups=1, dilation=1):
+def conv3x3(in_planes, out_planes, stride=1, groups=1, dilation=1):  # 一个三乘三的卷积
     """3x3 convolution with padding"""
     return nn.Conv2d(in_planes, out_planes, kernel_size=3, stride=stride,
                      padding=dilation, groups=groups, bias=False, dilation=dilation)
 
 
-def conv1x1(in_planes, out_planes, stride=1):
+def conv1x1(in_planes, out_planes, stride=1): # 一个一乘一的卷积
     """1x1 convolution"""
     return nn.Conv2d(in_planes, out_planes, kernel_size=1, stride=stride, bias=False)
 
 
-class Bottleneck(nn.Module):
+class Bottleneck(nn.Module):  # 对于使用的Bottleneck进行定义
     # Bottleneck in torchvision places the stride for downsampling at 3x3 convolution(self.conv2)
     # while original implementation places the stride at the first 1x1 convolution(self.conv1)
     # according to "Deep residual learning for image recognition"https://arxiv.org/abs/1512.03385.
     # This variant is also known as ResNet V1.5 and improves accuracy according to
     # https://ngc.nvidia.com/catalog/model-scripts/nvidia:resnet_50_v1_5_for_pytorch.
 
-    expansion = 4
+    expansion = 4  # 先设定我们的膨胀率为4
 
     def __init__(self, inplanes, planes, stride=1, downsample=None, groups=1,
-                 base_width=64, dilation=1, norm_layer=None):
+                 base_width=64, dilation=1, norm_layer=None): #参数定义
         super(Bottleneck, self).__init__()
         if norm_layer is None:
             norm_layer = nn.BatchNorm2d
@@ -113,7 +113,7 @@ class ResNet(nn.Module):
                 if isinstance(m, Bottleneck):
                     nn.init.constant_(m.bn3.weight, 0)
 
-    def _make_layer(self, block, planes, blocks, stride=1, dilate=False):
+    def _make_layer(self, block, planes, blocks, stride=1, dilate=False):  #构建layer
         norm_layer = self._norm_layer
         downsample = None
         previous_dilation = self.dilation
@@ -128,8 +128,7 @@ class ResNet(nn.Module):
 
         layers = []
         layers.append(block(self.inplanes, planes, stride, downsample, self.groups,
-                            self.base_width, previous_dilation, norm_layer))
-        self.inplanes = planes * block.expansion
+                            self.base_width, previous_dilation, norm_layer))  #传入进去必要的参数
         for _ in range(1, blocks):
             layers.append(block(self.inplanes, planes, groups=self.groups,
                                 base_width=self.base_width, dilation=self.dilation,
@@ -153,7 +152,7 @@ class ResNet(nn.Module):
         x = torch.flatten(x, 1)
         x = self.fc(x)
 
-        return x
+        return x  #构建出完整的架构
 
     def forward(self, x):
         return self._forward_impl(x)
